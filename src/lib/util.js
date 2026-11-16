@@ -29,7 +29,9 @@ export function duracao(ms) {
 
 /** Lê números digitados em pt-BR ("3,49" ou "3.49"). null se vazio/inválido. */
 export function lerNumero(texto) {
-  const limpo = String(texto ?? '').trim().replace(',', '.');
+  const limpo = String(texto ?? '')
+    .trim()
+    .replace(',', '.');
   if (limpo === '') return null;
   const n = Number(limpo);
   return Number.isFinite(n) ? n : null;
@@ -39,7 +41,10 @@ export const arredonda = (n, passo = 0.5) => Math.round(n / passo) * passo;
 export const limitar = (n, min, max) => Math.min(max, Math.max(min, n));
 
 export const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
 
 export function chaveDia(ts) {
   const d = new Date(ts);

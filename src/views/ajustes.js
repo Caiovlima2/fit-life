@@ -1,9 +1,12 @@
-import { get, commit, substituirTudo } from '../data.js';
+import { get, commit, substituirTudo, CHAVE } from '../data.js';
+import { montarBackup, validarBackup } from '../backup.js';
 import { esc, num, fmt, limitar } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, ui, toast, confirmar } from '../ui.js';
 import { baixar } from './historico.js';
 import * as timer from '../timer.js';
+import { TEMAS } from '../tema.js';
+import { permissao, pedirPermissao } from '../notificacao.js';
 
 export const VERSAO = '0.1.0';
 
@@ -11,11 +14,18 @@ const instalado = () => window.matchMedia('(display-mode: standalone)').matches 
 
 function tamanhoDados() {
   try {
-    return new Blob([localStorage.getItem('fitlife:v1') ?? '']).size;
+    return new Blob([localStorage.getItem(CHAVE) ?? '']).size;
   } catch {
     return 0;
   }
 }
+
+const textoNotificacao = () =>
+  permissao() === 'denied'
+    ? 'Bloqueado no navegador. Libere em Configurações do site.'
+    : permissao() === 'unsupported'
+      ? 'Este navegador não suporta notificações'
+      : 'Notificação quando o descanso acaba. Se o Android suspender o app, o aviso pode atrasar';
 
 const interruptor = (k, ligado, ic, titulo, desc) => `
   <button class="opt" data-a="toggle" data-k="${k}" role="switch" aria-checked="${ligado}">
@@ -54,12 +64,21 @@ export function ajustes() {
       <div class="row between mt8"><span class="caps mute">${num(Math.round(kb * 10) / 10)} KB ocupados</span><span class="caps mute">Limite seguro ~5 MB</span></div>
     </section>
 
+    <h2 class="section-t caps lime" style="font-size:12px;margin-bottom:4px">Aparência</h2>
+    <section class="card">
+      <b class="h-md" style="font-size:17px">Tema</b>
+      <div class="seg mt8" role="group" aria-label="Tema">${TEMAS.map(([k, n]) => `<button class="${c.tema === k ? 'on' : ''}" aria-pressed="${c.tema === k}" data-a="tema" data-v="${k}">${n}</button>`).join('')}</div>
+    </section>
+
     <h2 class="section-t caps lime" style="font-size:12px;margin-bottom:4px">Treino e notificações</h2>
     <section class="card" style="padding:4px 16px">
       ${interruptor('som', c.som, 'volume-2', 'Sons do timer', 'Bip ao terminar o descanso')}
       ${interruptor('vibracao', c.vibracao, 'smartphone', 'Vibração', 'Vibra ao fim do descanso e ao salvar série')}
       ${interruptor('telaLigada', c.telaLigada, 'lock', 'Manter tela sempre acesa', 'Evita bloquear durante o treino')}
+      ${interruptor('notificacao', c.notificacao && permissao() === 'granted', 'bell-ring', 'Avisar com o app em segundo plano', textoNotificacao())}
       ${interruptor('autoDescanso', c.autoDescanso, 'timer', 'Iniciar descanso automático', 'Ao confirmar a série')}
+      ${interruptor('sugestaoCarga', c.sugestaoCarga, 'trending-up', 'Sugerir aumento de carga', 'Quando você bate o máximo de reps na última vez')}
+      ${interruptor('rpe', c.rpe, 'gauge', 'Perguntar o esforço (RPE)', 'Depois de cada série de trabalho')}
     </section>
     <section class="card">
       <b class="h-md" style="font-size:17px">Incremento padrão de carga</b>
@@ -76,6 +95,14 @@ export function ajustes() {
       <button class="btn sec mt12" data-a="testar-alerta">${icon('bell-ring', 18)} Testar alerta do timer</button>
     </section>
 
+    <section class="card">
+      <b class="h-md" style="font-size:17px">Faixa de volume semanal</b>
+      <p class="sm mute" style="margin:4px 0 12px">Séries de trabalho por grupo muscular na semana. A referência comum é 10 a 20.</p>
+      <div class="row" style="gap:10px">
+        ${['volMin', 'volMax'].map((k) => `<div class="grow"><span class="caps mute">${k === 'volMin' ? 'Mínimo' : 'Máximo'}</span><div class="stepper mt8" style="grid-template-columns:48px 1fr 48px"><button data-a="vol-faixa" data-k="${k}" data-d="-1" aria-label="Diminuir">−</button><div class="valor"><b class="num" style="font-size:20px">${c[k]}</b></div><button data-a="vol-faixa" data-k="${k}" data-d="1" aria-label="Aumentar">+</button></div></div>`).join('')}
+      </div>
+    </section>
+
     <h2 class="section-t caps lime" style="font-size:12px;margin-bottom:4px">Dados e segurança local</h2>
     <section class="card" style="padding:4px 16px">
       <button class="opt" data-a="exportar"><span class="ic-b ok">${icon('upload', 22)}</span><span class="grow"><b>Exportar backup</b><span class="d">Baixa um arquivo .json com treinos e históricos</span></span>${icon('chevron-right', 18)}</button>
@@ -88,17 +115,24 @@ export function ajustes() {
   return { top: '<h1>Ajustes</h1>', html, nav: true };
 }
 
-function validarBackup(obj) {
-  const dados = obj?.dados ?? obj;
-  if (!dados || !Array.isArray(dados.treinos) || !Array.isArray(dados.sessoes)) return null;
-  return dados;
-}
-
 registrar(
   {
-    toggle: (el) => commit((d) => (d.config[el.dataset.k] = !d.config[el.dataset.k])),
+    tema: (el) => commit((d) => (d.config.tema = el.dataset.v)),
+    toggle: async (el) => {
+      if (el.dataset.k !== 'notificacao') return commit((d) => (d.config[el.dataset.k] = !d.config[el.dataset.k]));
+      const ligar = !(get().config.notificacao && permissao() === 'granted');
+      if (ligar && (await pedirPermissao()) !== 'granted') return toast('Permissão de notificação não concedida.');
+      commit((d) => (d.config.notificacao = ligar));
+    },
     'passo-padrao': (el) => commit((d) => (d.config.passo = Number(el.dataset.v))),
     meta: (el) => commit((d) => (d.config.metaSemanal = limitar(d.config.metaSemanal + Number(el.dataset.d), 1, 7))),
+    'vol-faixa': (el) =>
+      commit((d) => {
+        const { k, d: passo } = el.dataset;
+        const v = limitar(d.config[k] + Number(passo), 1, 60);
+        d.config[k] = v;
+        if (d.config.volMin > d.config.volMax) d.config[k === 'volMin' ? 'volMax' : 'volMin'] = v;
+      }),
     'testar-alerta': () => {
       timer.destravarAudio();
       timer.alertar({ tipo: 'descanso' });
@@ -113,20 +147,23 @@ registrar(
       commit(() => {});
     },
     exportar: () => {
-      const d = get();
-      const copia = { ...d, timer: null };
-      const pacote = { app: 'fit-life', versao: 1, exportadoEm: Date.now(), dados: copia };
-      baixar(`fit-life-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(pacote, null, 2), 'application/json');
+      const pacote = montarBackup(get());
+      baixar(
+        `fit-life-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(pacote, null, 2),
+        'application/json',
+      );
       commit((db) => (db.ultimoBackup = Date.now()));
       toast('Backup exportado');
     },
     apagar: () =>
       confirmar({
         titulo: 'Apagar todos os dados?',
-        texto: 'Treinos, histórico e ajustes deste aparelho serão removidos. Exporte um backup antes se quiser guardar.',
+        texto:
+          'Treinos, histórico e ajustes deste aparelho serão removidos. Exporte um backup antes se quiser guardar.',
         ok: 'Apagar tudo',
         fn: () => {
-          localStorage.removeItem('fitlife:v1');
+          localStorage.removeItem(CHAVE);
           location.hash = '#/';
           location.reload();
         },

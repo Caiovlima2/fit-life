@@ -1,20 +1,26 @@
 import { get, commit, treinoAtual, iniciarSessao, resumoSeries, resumoSessao, novoTreino } from '../data.js';
-import { esc, mss, num, inteiro, fmt, duracao } from '../lib/util.js';
+import { esc, mss, inteiro, fmt, duracao } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, abrirSheet, fecharSheet, toast, ir, ui } from '../ui.js';
 import * as timer from '../timer.js';
+import { botaoVideo } from './video.js';
 
 function badgeIntensidade(i) {
   const nome = { leve: 'Leve', moderada: 'Moderada', pesada: 'Pesada' }[i] ?? i;
   return `<span class="badge ${esc(i)}">${nome}</span>`;
 }
 
+const NOMES_BADGE = { drop: 'Drop set', cluster: 'Cluster set', restpause: 'Rest-pause', tempo: 'Por tempo' };
+
 function badgesTecnica(ex) {
   const out = [];
-  const drops = ex.series.map((s, i) => (s.tipo === 'drop' ? i + 1 : 0)).filter(Boolean);
-  const clusters = ex.series.filter((s) => s.tipo === 'cluster').length;
-  if (drops.length) out.push(`<span class="badge tec">${icon('layers', 12)} Drop set · Série ${drops.join(', ')}</span>`);
-  if (clusters) out.push(`<span class="badge tec">${icon('layers', 12)} Cluster set${clusters > 1 ? ` ×${clusters}` : ''}</span>`);
+  for (const [tipo, nome] of Object.entries(NOMES_BADGE)) {
+    const posicoes = ex.series.map((s, i) => (s.tipo === tipo ? i + 1 : 0)).filter(Boolean);
+    if (!posicoes.length) continue;
+    const onde =
+      tipo === 'drop' ? ` · Série ${posicoes.join(', ')}` : posicoes.length > 1 ? ` ×${posicoes.length}` : '';
+    out.push(`<span class="badge tec">${icon('layers', 12)} ${nome}${onde}</span>`);
+  }
   return out.join('');
 }
 
@@ -72,9 +78,7 @@ export function hoje() {
           ? `<span class="stat-and">Em andamento · ${concl}/${totalSeries} séries</span>`
           : `<span class="stat-pend">PENDENTE</span>`;
       const rotulo = feito ? 'Registro' : andamento ? 'Continuar' : 'Iniciar';
-      const video = ex.video
-        ? `<a class="vid on" href="${esc(ex.video)}" target="_blank" rel="noopener" aria-label="Ver vídeo de ${esc(ex.nome)}">${icon('circle-play', 24)}</a>`
-        : `<button class="vid" data-a="sem-video" aria-label="Sem vídeo cadastrado">${icon('circle-play', 24)}</button>`;
+      const video = botaoVideo(ex, 'vid');
 
       return `
       <article class="card ex-card ${destaque ? 'hl' : ''}">

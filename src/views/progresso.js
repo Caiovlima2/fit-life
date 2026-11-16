@@ -1,7 +1,20 @@
-import { get, commit, exerciciosComHistorico, pontosCarga, topoCarga, volumeSerie, rm1, textoSerie } from '../data.js';
+import {
+  get,
+  commit,
+  exerciciosComHistorico,
+  pontosCarga,
+  topoCarga,
+  volumeSerie,
+  rm1,
+  textoSerie,
+  emBlocos,
+} from '../data.js';
 import { esc, num, num1, inteiro, fmt, dataCurta, chaveDia } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, ui } from '../ui.js';
+import { abaRecordes } from './recordes.js';
+import { abaVolume, detalheGrupo } from './volume.js';
+import { NOME_MUSCULO } from '../musculos.js';
 
 const PERIODOS = [
   ['1m', '1 mês', 30],
@@ -41,13 +54,18 @@ function grafico(pts) {
   const ticks = 4;
   const grade = Array.from({ length: ticks }, (_, i) => {
     const v = min + ((max - min) * i) / (ticks - 1);
-    return `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="#262c3b" stroke-width="1"/>
-      <text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" fill="#94a3b8" font-size="10" font-family="Space Grotesk">${num(Math.round(v * 2) / 2)}</text>`;
+    return `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--line)" stroke-width="1"/>
+      <text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" style="fill:var(--mute)" font-size="10" font-family="Space Grotesk">${num(Math.round(v * 2) / 2)}</text>`;
   }).join('');
 
   const caminho = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.ts).toFixed(1)},${y(p.carga).toFixed(1)}`).join(' ');
   const area = `${caminho} L${x(t1).toFixed(1)},${H - m.b} L${x(t0).toFixed(1)},${H - m.b} Z`;
-  const pontos = pts.map((p) => `<circle cx="${x(p.ts).toFixed(1)}" cy="${y(p.carga).toFixed(1)}" r="4" fill="#0c0e12" stroke="#d4ff00" stroke-width="2"/>`).join('');
+  const pontos = pts
+    .map(
+      (p) =>
+        `<circle cx="${x(p.ts).toFixed(1)}" cy="${y(p.carga).toFixed(1)}" r="4" style="fill:var(--bg);stroke:var(--lime-t)" stroke-width="2"/>`,
+    )
+    .join('');
 
   const idxMax = cargas.indexOf(Math.max(...cargas));
   const ult = pts.at(-1);
@@ -57,39 +75,65 @@ function grafico(pts) {
   const etiqueta = `${num(ult.carga)} kg${pr ? ' ★' : ''}`;
   const tw = etiqueta.length * 6.4 + 14;
   const tx = Math.min(W - m.r - tw, Math.max(m.l, lx - tw / 2));
-  const tooltip = `<rect x="${tx}" y="${ly - 30}" width="${tw}" height="20" rx="6" fill="#d4ff00"/>
-    <text x="${tx + tw / 2}" y="${ly - 16}" text-anchor="middle" fill="#0c0e12" font-size="11" font-weight="700" font-family="Space Grotesk">${etiqueta}</text>`;
+  const tooltip = `<rect x="${tx}" y="${ly - 30}" width="${tw}" height="20" rx="6" style="fill:var(--lime)"/>
+    <text x="${tx + tw / 2}" y="${ly - 16}" text-anchor="middle" style="fill:var(--on-lime)" font-size="11" font-weight="700" font-family="Space Grotesk">${etiqueta}</text>`;
   void idxMax;
 
   const nLab = Math.min(4, pts.length);
   const rotulos = Array.from({ length: nLab }, (_, i) => {
     const p = pts[nLab === 1 ? 0 : Math.round((i * (pts.length - 1)) / (nLab - 1))];
-    return `<text x="${x(p.ts)}" y="${H - 6}" text-anchor="${i === 0 && nLab > 1 ? 'start' : i === nLab - 1 && nLab > 1 ? 'end' : 'middle'}" fill="#94a3b8" font-size="10" font-family="Space Grotesk">${esc(dataCurta(p.ts))}</text>`;
+    return `<text x="${x(p.ts)}" y="${H - 6}" text-anchor="${i === 0 && nLab > 1 ? 'start' : i === nLab - 1 && nLab > 1 ? 'end' : 'middle'}" style="fill:var(--mute)" font-size="10" font-family="Space Grotesk">${esc(dataCurta(p.ts))}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolução da carga máxima">
-    <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d4ff00" stop-opacity=".35"/><stop offset="1" stop-color="#d4ff00" stop-opacity="0"/></linearGradient></defs>
+    <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--lime-t)" stop-opacity=".35"/><stop offset="1" style="stop-color:var(--lime-t)" stop-opacity="0"/></linearGradient></defs>
     ${grade}
     <path d="${area}" fill="url(#g)"/>
-    <path d="${caminho}" fill="none" stroke="#d4ff00" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${caminho}" fill="none" style="stroke:var(--lime-t)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${pontos}${tooltip}${rotulos}
   </svg>`;
 }
 
+const NOME_BLOCOS = { cluster: 'Cluster', restpause: 'Rest-pause' };
+
 function chipsSerie(e) {
   if (e.tipo === 'drop') return `<span class="drop">Drop (${e.partes.map((p) => num(p.carga)).join('/')})</span>`;
-  if (e.tipo === 'cluster') return `<span class="drop">Cluster ${num(e.carga)} kg · ${e.partes.map((p) => p.reps).join('+')}</span>`;
+  if (emBlocos(e.tipo))
+    return `<span class="drop">${NOME_BLOCOS[e.tipo]} ${num(e.carga)} kg · ${e.partes.map((p) => p.reps).join('+')}</span>`;
+  if (e.tipo === 'tempo') return `<span class="drop">${esc(textoSerie(e, num))}</span>`;
   return `<span>${num1(e.partes[0].carga)} × ${e.partes[0].reps}</span>`;
 }
 
+const ABAS = [
+  ['evolucao', 'Evolução'],
+  ['recordes', 'Recordes'],
+  ['volume', 'Volume'],
+];
+
+const abas = () =>
+  `<div class="abas3" role="tablist">${ABAS.map(([k, n]) => `<button role="tab" aria-selected="${ui.progAba === k}" class="${ui.progAba === k ? 'on' : ''}" data-a="prog-aba" data-v="${k}">${n}</button>`).join('')}</div>`;
+
 export function progresso() {
+  if (ui.progAba === 'volume' && ui.volGrupo) {
+    return {
+      top: `<button class="icon-btn" data-a="vol-voltar" aria-label="Voltar">${icon('arrow-left', 24)}</button><h1 class="sub">Volume semanal</h1>`,
+      html: detalheGrupo(),
+      nav: true,
+    };
+  }
+  if (ui.progAba === 'recordes') return { top: '<h1>Progresso</h1>', html: abas() + abaRecordes(), nav: true };
+  if (ui.progAba === 'volume') return { top: '<h1>Progresso</h1>', html: abas() + abaVolume(), nav: true };
+  return evolucao();
+}
+
+function evolucao() {
   const d = get();
   const lista = exerciciosComHistorico();
   const top = `<h1>Progresso</h1>`;
   if (!lista.length) {
     return {
       top,
-      html: `<div class="vazio">${icon('trending-up', 40)}<p><b>Ainda não há histórico.</b><br>Finalize um treino e a evolução de carga de cada exercício aparece aqui.</p><a class="btn" href="#/">Ir para o treino</a></div>`,
+      html: `${abas()}<div class="vazio">${icon('trending-up', 40)}<p><b>Ainda não há histórico.</b><br>Finalize um treino e a evolução de carga de cada exercício aparece aqui.</p><a class="btn" href="#/">Ir para o treino</a></div>`,
       nav: true,
     };
   }
@@ -100,7 +144,9 @@ export function progresso() {
 
   const todos = pontosCarga(sel.id);
   const pts = todos.filter((p) => p.ts >= corte);
-  const sessoes = d.sessoes.filter((s) => s.exercicios[sel.id] && s.exercicios[sel.id].series.some((e) => e.concluida));
+  const sessoes = d.sessoes.filter(
+    (s) => s.exercicios[sel.id] && s.exercicios[sel.id].series.some((e) => e.concluida && !e.aquecimento),
+  );
 
   // Estatísticas do período
   const sesPeriodo = sessoes.filter((s) => s.inicio >= corte);
@@ -108,9 +154,9 @@ export function progresso() {
   let volume = 0;
   for (const s of sesPeriodo) {
     for (const e of s.exercicios[sel.id].series) {
-      if (!e.concluida) continue;
+      if (!e.concluida || e.aquecimento) continue;
       volume += volumeSerie(e);
-      if (e.tipo === 'cluster') continue;
+      if (e.tipo !== 'normal' && e.tipo !== 'drop') continue;
       const c = topoCarga(e);
       const r = e.partes[0].reps;
       const est = rm1(c, r);
@@ -122,11 +168,14 @@ export function progresso() {
   const ultima = pts.at(-1)?.carga ?? 0;
   const variacao = primeira > 0 ? ((ultima - primeira) / primeira) * 100 : 0;
 
-  const botoesPeriodo = PERIODOS.map(([k, nome]) => `<button class="chip ${ui.periodo === k ? 'on' : ''}" data-a="periodo" data-v="${k}">${nome}</button>`).join('');
+  const botoesPeriodo = PERIODOS.map(
+    ([k, nome]) =>
+      `<button class="chip ${ui.periodo === k ? 'on' : ''}" data-a="periodo" data-v="${k}">${nome}</button>`,
+  ).join('');
 
   const blocoGrafico = pts.length
     ? `<section class="card grafico">
-        <div class="row between"><span class="caps ok">● Evolução de carga máxima</span>${pts.length > 1 && ultima >= cargaMax ? `<span class="badge neutro" style="color:var(--lime)">${icon('zap', 12)} Novo PR</span>` : ''}</div>
+        <div class="row between"><span class="caps ok">● Evolução de carga máxima</span>${pts.length > 1 && ultima >= cargaMax ? `<span class="badge neutro" style="color:var(--lime-t)">${icon('zap', 12)} Novo PR</span>` : ''}</div>
         <div class="row mt8" style="gap:10px;align-items:baseline"><b class="h-lg">${num(ultima)} kg</b>${pts.length > 1 ? `<span class="ok num" style="font-weight:600">${variacao >= 0 ? '+' : ''}${num(Math.round(variacao * 10) / 10)}%</span>` : ''}</div>
         ${grafico(pts)}
         <p class="sm mute" style="margin:6px 0 0">Séries normais / 1º degrau do drop set. ${pts.length === 1 ? 'Com mais sessões, a linha de evolução aparece.' : ''}</p>
@@ -144,7 +193,7 @@ export function progresso() {
     .slice(0, 6)
     .map((s) => {
       const reg = s.exercicios[sel.id];
-      const concl = reg.series.filter((e) => e.concluida);
+      const concl = reg.series.filter((e) => e.concluida && !e.aquecimento);
       const vol = concl.reduce((a, e) => a + volumeSerie(e), 0);
       return `<article class="card">
         <div class="row between"><div class="row" style="gap:8px"><b class="h-md">${rotuloDia(s.inicio)}</b><span class="badge neutro">${concl.length} série${concl.length > 1 ? 's' : ''}</span></div>
@@ -159,7 +208,9 @@ export function progresso() {
   const ultSes = sessoes.at(-1);
   let reco = '';
   if (ultSes) {
-    const normais = ultSes.exercicios[sel.id].series.filter((e) => e.concluida && e.tipo === 'normal');
+    const normais = ultSes.exercicios[sel.id].series.filter(
+      (e) => e.concluida && !e.aquecimento && e.tipo === 'normal',
+    );
     if (normais.length) {
       const c = Math.max(...normais.map(topoCarga));
       const alvo = normais[0].repsMax;
@@ -178,6 +229,7 @@ export function progresso() {
   }
 
   const html = `
+    ${abas()}
     <section class="card" style="margin-top:8px"><label class="seletor">
       <span class="icone-q">${icon('dumbbell', 20)}</span>
       <span class="grow"><span class="caps mute" style="display:block">Exercício monitorado</span><b class="h-md" style="font-size:18px">${esc(sel.nome)}</b></span>
@@ -196,6 +248,11 @@ export function progresso() {
 
 registrar(
   {
+    'prog-aba': (el) => {
+      ui.progAba = el.dataset.v;
+      ui.volGrupo = null;
+      commit(() => {});
+    },
     periodo: (el) => {
       ui.periodo = el.dataset.v;
       commit(() => {});
@@ -210,4 +267,5 @@ registrar(
 );
 
 void fmt;
+void NOME_MUSCULO;
 void textoSerie;

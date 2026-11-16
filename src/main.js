@@ -10,11 +10,13 @@ import { carregar, onChange, get } from './data.js';
 import { acoes, entradas, ui } from './ui.js';
 import { icon } from './lib/icons.js';
 import * as timer from './timer.js';
+import { aplicarTema } from './tema.js';
 import { hoje } from './views/hoje.js';
 import { exercicio, prepararExercicio } from './views/exercicio.js';
 import { editar } from './views/editar.js';
 import { progresso } from './views/progresso.js';
 import { historico, sessao } from './views/historico.js';
+import './views/video.js';
 import { ajustes } from './views/ajustes.js';
 import { timerView, barraTimer, atualizarTick } from './views/timer.js';
 import { duracao, inteiro, lerNumero } from './lib/util.js';
@@ -96,12 +98,17 @@ function render() {
 
   if (ui.rolarAtiva) {
     ui.rolarAtiva = false;
-    requestAnimationFrame(() => document.querySelector('.serie.ativa')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    requestAnimationFrame(() =>
+      document.querySelector('.serie.ativa')?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
+    );
   }
   timer.manterTelaLigada(!!d.ativa && d.config.telaLigada);
+  aplicarTema(d.config.tema);
 }
 
 /* ---------- Eventos ---------- */
+
+window.matchMedia?.('(prefers-color-scheme: light)').addEventListener('change', () => aplicarTema(get().config.tema));
 
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-a]');
@@ -139,7 +146,10 @@ document.addEventListener('change', (ev) => {
   // Ao sair do campo numérico, só padroniza o texto (sem redesenhar, para não perder o toque seguinte).
   if (el.dataset.fmt != null) {
     const n = lerNumero(el.value) ?? 0;
-    el.value = el.dataset.fmt === '1' ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(n) : String(Math.round(n));
+    el.value =
+      el.dataset.fmt === '1'
+        ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(n)
+        : String(Math.round(n));
   }
 });
 
@@ -185,8 +195,6 @@ render();
 // Se o timer terminou enquanto o app estava fechado, confere agora.
 timer.tick();
 
-import('virtual:pwa-register')
-  .then(({ registerSW }) => registerSW({ immediate: true }))
-  .catch(() => {});
+import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true })).catch(() => {});
 
 void inteiro;

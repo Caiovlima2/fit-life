@@ -1,4 +1,15 @@
-import { get, commit, diasTreinados, resumoSessao, topoCarga, textoSerie, TIPOS, ehSessaoFeita } from '../data.js';
+import {
+  get,
+  commit,
+  diasTreinados,
+  resumoSessao,
+  topoCarga,
+  textoSerie,
+  rotuloSerie,
+  cargaDaParte,
+  TIPOS,
+  ehSessaoFeita,
+} from '../data.js';
 import { esc, num, num1, mss, inteiro, fmt, hora, chaveDia, duracao, inicioDaSemana } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, ui, confirmar, toast, ir } from '../ui.js';
@@ -73,14 +84,18 @@ export function historico() {
     );
   }
 
-  const lista = (ui.dia ? feitas.filter((s) => chaveDia(s.inicio) === ui.dia) : [...feitas].reverse().slice(0, 10)).slice();
+  const lista = (
+    ui.dia ? feitas.filter((s) => chaveDia(s.inicio) === ui.dia) : [...feitas].reverse().slice(0, 10)
+  ).slice();
   if (!ui.dia) lista.sort((a, b) => b.inicio - a.inicio);
   const cartoes = lista
     .map((s) => {
       const r = resumoSessao(s);
       const treino = d.treinos.find((t) => t.id === s.treinoId);
       const totalEx = treino ? treino.exercicios.length : Object.keys(s.exercicios).length;
-      const nomes = Object.values(s.exercicios).map((x) => x.nome).join(', ');
+      const nomes = Object.values(s.exercicios)
+        .map((x) => x.nome)
+        .join(', ');
       return `<a class="card sess-card" href="#/sessao/${s.id}" style="display:block">
         <div class="row between wrap">
           <span class="row" style="gap:8px"><span class="badge ${chaveDia(s.inicio) === hojeK ? 'lime' : 'neutro'}">${esc(rotuloData(s.inicio))}</span><span class="sm mute">Finalizado às ${hora(s.fim ?? s.inicio)}</span></span>
@@ -91,7 +106,7 @@ export function historico() {
           <div><span class="caps k">Duração</span><b>${duracao(r.duracao)}</b></div>
           <div><span class="caps k">Carga total</span><b class="lime">${inteiro(r.volume)}<small class="mute" style="font-size:12px"> kg</small></b></div>
           <div><span class="caps k">Exercícios</span><b class="ok">${r.feitos}/${Math.max(totalEx, r.feitos)}</b></div>
-          ${r.recordes ? `<div><span class="caps k">Recordes</span><b style="color:var(--lime)">${r.recordes} ${icon('trophy', 16)}</b></div>` : ''}
+          ${r.recordes ? `<div><span class="caps k">Recordes</span><b style="color:var(--lime-t)">${r.recordes} ${icon('trophy', 16)}</b></div>` : ''}
         </div>
         <p class="sm mute" style="margin:10px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon('circle-check', 14)} ${esc(nomes)}</p>
       </a>`;
@@ -133,18 +148,21 @@ export function sessao({ id }) {
   const d = get();
   const s = d.sessoes.find((x) => x.id === id);
   const voltar = `<a class="icon-btn" href="#/historico" aria-label="Voltar">${icon('arrow-left', 24)}</a>`;
-  if (!s) return { top: `${voltar}<h1 class="sub">Treino</h1>`, html: `<div class="vazio"><p>Sessão não encontrada.</p><a class="btn" href="#/historico">Voltar</a></div>`, nav: false };
+  if (!s)
+    return {
+      top: `${voltar}<h1 class="sub">Treino</h1>`,
+      html: `<div class="vazio"><p>Sessão não encontrada.</p><a class="btn" href="#/historico">Voltar</a></div>`,
+      nav: false,
+    };
   const r = resumoSessao(s);
   const exs = Object.entries(s.exercicios)
     .map(([, reg]) => {
       const linhas = reg.series
         .map((e, i) => {
           const detalhe =
-            e.tipo === 'normal'
-              ? `${num1(e.partes[0].carga)} kg × ${e.partes[0].reps}`
-              : esc(textoSerie(e, num));
+            e.tipo === 'normal' ? `${num1(e.partes[0].carga)} kg × ${e.partes[0].reps}` : esc(textoSerie(e, num));
           return `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
-            <span><b class="num">Série ${i + 1}</b> <span class="badge ${e.tipo === 'normal' ? 'neutro' : 'tec'}" style="margin-left:4px">${TIPOS[e.tipo]}</span> ${e.recorde ? `<span class="badge recorde">${icon('trophy', 12)}</span>` : ''}</span>
+            <span><b class="num">${rotuloSerie(reg.series, i)}</b> <span class="badge ${e.tipo === 'normal' || e.aquecimento ? 'neutro' : 'tec'}" style="margin-left:4px">${e.aquecimento ? 'Aquecimento' : TIPOS[e.tipo]}</span>${e.rpe ? ` <span class="badge neutro">RPE ${e.rpe}</span>` : ''} ${e.recorde ? `<span class="badge recorde">${icon('trophy', 12)}</span>` : ''}</span>
             <span class="num" style="text-align:right"><b>${detalhe}</b>${e.descansoReal != null ? `<span class="sm mute" style="display:block">descansou ${mss(e.descansoReal)}</span>` : ''}</span>
           </div>`;
         })
@@ -171,14 +189,42 @@ export function sessao({ id }) {
 /* ---------- CSV ---------- */
 
 export function gerarCSV() {
-  const linhas = [['data', 'treino', 'exercicio', 'serie', 'tecnica', 'parte', 'carga_kg', 'reps', 'descanso_real_s', 'recorde']];
+  const linhas = [
+    [
+      'data',
+      'treino',
+      'exercicio',
+      'serie',
+      'tecnica',
+      'parte',
+      'carga_kg',
+      'reps',
+      'segundos',
+      'rpe',
+      'descanso_real_s',
+      'recorde',
+    ],
+  ];
   for (const s of get().sessoes) {
     const dia = chaveDia(s.inicio);
     for (const reg of Object.values(s.exercicios)) {
       reg.series.forEach((e, i) => {
         if (!e.concluida) return;
         e.partes.forEach((p, k) => {
-          linhas.push([dia, s.nome, reg.nome, i + 1, TIPOS[e.tipo], k + 1, e.tipo === 'cluster' ? e.carga : p.carga, p.reps, e.descansoReal ?? '', e.recorde ? 'sim' : '']);
+          linhas.push([
+            dia,
+            s.nome,
+            reg.nome,
+            i + 1,
+            e.aquecimento ? 'Aquecimento' : TIPOS[e.tipo],
+            k + 1,
+            cargaDaParte(e, p),
+            e.tipo === 'tempo' ? '' : p.reps,
+            e.tipo === 'tempo' ? p.segundos : '',
+            e.rpe ?? '',
+            e.descansoReal ?? '',
+            e.recorde ? 'sim' : '',
+          ]);
         });
       });
     }

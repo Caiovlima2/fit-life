@@ -8,6 +8,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Fit Life</title>
+    <script>
+      // Aplica o tema antes da primeira pintura (evita piscar escuro). Mesma regra de src/tema.js.
+      try {
+        const t = JSON.parse(localStorage.getItem('fitlife:v1') || '{}').config?.tema;
+        const claro = t === 'claro' || (t === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+        document.documentElement.dataset.tema = claro ? 'claro' : 'escuro';
+        if (claro) document.querySelector('meta[name="theme-color"]').content = '#F3F5F9';
+      } catch {
+        /* usa o escuro */
+      }
+    </script>
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icon-192.png" />
   </head>

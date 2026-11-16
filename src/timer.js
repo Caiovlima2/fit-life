@@ -1,11 +1,12 @@
 import { get, commit } from './data.js';
+import * as notificacao from './notificacao.js';
 
 /*
  * TIMER DE DESCANSO
  * Guarda o HORÁRIO DE TÉRMINO (não um contador), então continua certo se a tela
  * apagar, o app for pausado ou a página recarregar.
  *
- * db.timer = { inicio, fim | null, restante | null (pausado), total, tipo: 'descanso' | 'pausa',
+ * db.timer = { inicio, fim | null, restante | null (pausado), total, tipo: 'descanso' | 'pausa' | 'tempo',
  *              ref: { exId, idx } | null, proxima: { texto, exId } | null, terminou }
  */
 
@@ -22,11 +23,21 @@ export function restanteMs() {
 export const restanteSeg = () => Math.ceil(restanteMs() / 1000);
 export const emPausa = () => !!get().timer && get().timer.fim == null;
 
+/** @param {{ seg: number, tipo?: 'descanso' | 'pausa' | 'tempo', ref?: any, proxima?: any }} opcoes */
 export function iniciar({ seg, tipo = 'descanso', ref = null, proxima = null }) {
   finalizarDescanso();
   const agora = Date.now();
   commit((d) => {
-    d.timer = { inicio: agora, fim: agora + seg * 1000, restante: null, total: seg, tipo, ref, proxima, terminou: false };
+    d.timer = {
+      inicio: agora,
+      fim: agora + seg * 1000,
+      restante: null,
+      total: seg,
+      tipo,
+      ref,
+      proxima,
+      terminou: false,
+    };
   }, false);
   ouvintes.mudou();
 }
@@ -102,7 +113,7 @@ export function definirAlvo(seg) {
 let audioCtx = null;
 export function destravarAudio() {
   try {
-    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx ??= new (window.AudioContext || /** @type {any} */ (window).webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
   } catch {
     /* sem áudio */
@@ -131,6 +142,7 @@ export function bipar(vezes = 3) {
   }
 }
 
+/** @param {number | number[]} [padrao] ms, ou padrão vibra/pausa/vibra… */
 export function vibrar(padrao = 15) {
   try {
     navigator.vibrate?.(padrao);
@@ -140,10 +152,11 @@ export function vibrar(padrao = 15) {
 }
 
 export function alertar(t) {
-  const { som, vibracao } = get().config;
-  const curto = t.tipo === 'pausa';
+  const { som, vibracao, notificacao: avisar } = get().config;
+  const curto = t.tipo !== 'descanso';
   if (som) bipar(curto ? 2 : 3);
   if (vibracao) vibrar(curto ? [150, 80, 150] : [250, 100, 250, 100, 500]);
+  if (avisar && document.visibilityState === 'hidden') notificacao.mostrar(t);
 }
 
 /** Chamado a cada 250 ms. */
@@ -165,7 +178,10 @@ export function iniciarRelogio() {
   setInterval(tick, 250);
   // Ao voltar para o app, confere na hora (a tela pode ter ficado apagada).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') tick();
+    if (document.visibilityState === 'visible') {
+      notificacao.limpar();
+      tick();
+    }
   });
 }
 

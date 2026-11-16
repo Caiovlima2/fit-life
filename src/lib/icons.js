@@ -1,6 +1,6 @@
 const arquivos = import.meta.glob(
   [
-    '/node_modules/lucide-static/icons/{dumbbell,trending-up,calendar,sliders-horizontal,circle-play,timer,hourglass,check,circle-check,plus,minus,chevron-down,chevron-up,chevron-left,chevron-right,pencil,flame,trophy,lightbulb,history,grip-vertical,trash-2,download,upload,arrow-right,arrow-left,pause,play,skip-forward,rotate-ccw,rotate-cw,volume-2,smartphone,lock,zap,notebook-pen,star,wifi-off,x,external-link,flag,arrow-up,arrow-down,equal,sparkles,list-checks,wifi,copy,layers,bell-ring,hand}.svg',
+    '/node_modules/lucide-static/icons/{dumbbell,trending-up,calendar,sliders-horizontal,circle-play,timer,hourglass,check,circle-check,plus,minus,chevron-down,chevron-up,chevron-left,chevron-right,pencil,flame,trophy,lightbulb,history,grip-vertical,trash-2,download,upload,arrow-right,arrow-left,pause,play,skip-forward,rotate-ccw,rotate-cw,volume-2,smartphone,lock,zap,notebook-pen,star,wifi-off,x,external-link,flag,arrow-up,arrow-down,equal,sparkles,list-checks,wifi,copy,layers,bell-ring,hand,gauge}.svg',
   ],
   { query: '?raw', import: 'default', eager: true },
 );

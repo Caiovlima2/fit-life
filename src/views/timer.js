@@ -1,9 +1,10 @@
-import { get, commit, acharExercicio, PRESETS_DESCANSO } from '../data.js';
+import { get, commit, acharExercicio, rotuloSerie, PRESETS_DESCANSO } from '../data.js';
 import { esc, mmss, mss } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, ir } from '../ui.js';
 import * as timer from '../timer.js';
 
+const ROTULOS = { descanso: 'Descanso', pausa: 'Pausa entre blocos', tempo: 'Série por tempo' };
 const R = 118;
 const C = 2 * Math.PI * R;
 
@@ -17,8 +18,7 @@ const fracao = () => {
 export function barraTimer() {
   const t = get().timer;
   if (!t) return '';
-  const pausa = t.tipo === 'pausa';
-  const rotulo = t.terminou ? 'Bora!' : timer.emPausa() ? 'Pausado' : pausa ? 'Pausa entre blocos' : 'Descanso';
+  const rotulo = t.terminou ? 'Bora!' : timer.emPausa() ? 'Pausado' : ROTULOS[t.tipo];
   const sub = t.terminou && t.proxima ? t.proxima.texto : '';
   const f = fracao();
   return `<div class="timer-bar ${t.terminou ? 'fim' : ''}" role="timer" aria-label="Timer de descanso">
@@ -43,12 +43,18 @@ export function timerView() {
   const t = d.timer;
   const voltar = `<button class="icon-btn" data-a="minimizar" aria-label="Minimizar">${icon('chevron-left', 24)}</button>`;
   if (!t) {
-    return { top: `${voltar}<h1 class="sub">Timer</h1>`, html: `<div class="vazio">${icon('timer', 40)}<p>Nenhum descanso em andamento.</p><a class="btn" href="#/">Voltar ao treino</a></div>`, nav: false, semDock: true };
+    return {
+      top: `${voltar}<h1 class="sub">Timer</h1>`,
+      html: `<div class="vazio">${icon('timer', 40)}<p>Nenhum descanso em andamento.</p><a class="btn" href="#/">Voltar ao treino</a></div>`,
+      nav: false,
+      semDock: true,
+    };
   }
-  const ref = t.ref ? acharExercicio(t.ref.exId) : null;
+  const seriesRef = t.ref ? d.ativa?.exercicios[t.ref.exId]?.series : null;
   const prox = t.proxima?.exId ? acharExercicio(t.proxima.exId) : null;
   const pausado = timer.emPausa();
-  const rotulo = t.tipo === 'pausa' ? 'Pausa entre blocos' : `Descanso${ref ? ` · Série ${t.ref.idx + 1} concluída` : ''}`;
+  const rotulo =
+    t.tipo === 'descanso' && seriesRef ? `Descanso · ${rotuloSerie(seriesRef, t.ref.idx)} concluída` : ROTULOS[t.tipo];
   const dashoffset = C * (1 - fracao());
 
   const presets =
@@ -78,8 +84,8 @@ export function timerView() {
       <span class="caps lime">● ${esc(rotulo)}</span>
       <div class="anel-wrap">
         <svg viewBox="0 0 280 280" aria-hidden="true">
-          <circle cx="140" cy="140" r="${R}" fill="none" stroke="#1c212d" stroke-width="14"/>
-          <circle data-timer-ring cx="140" cy="140" r="${R}" fill="none" stroke="#d4ff00" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${dashoffset.toFixed(2)}"/>
+          <circle cx="140" cy="140" r="${R}" fill="none" style="stroke:var(--inset)" stroke-width="14"/>
+          <circle data-timer-ring cx="140" cy="140" r="${R}" fill="none" style="stroke:var(--lime-t)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${dashoffset.toFixed(2)}"/>
         </svg>
         <div class="centro"><span class="grande" data-timer-t>${mmss(timer.restanteSeg())}</span><span class="caps mute" style="margin-top:6px">${icon('timer', 12)} Alvo: ${mmss(t.total)}</span></div>
       </div>
@@ -93,7 +99,12 @@ export function timerView() {
     </section>
     ${proximo}
   `;
-  return { top: `${voltar}<h1 class="sub">Treino</h1><span class="tag-ativo">Ativo</span>`, html, nav: false, semDock: true };
+  return {
+    top: `${voltar}<h1 class="sub">Treino</h1><span class="tag-ativo">Ativo</span>`,
+    html,
+    nav: false,
+    semDock: true,
+  };
 }
 
 /** Atualiza só os números (sem redesenhar) a cada tick. */

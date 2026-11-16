@@ -1,30 +1,21 @@
-import { get, commit, treinoAtual, novoExercicio, novaSerie, resumoSeries, repsTxt, TIPOS, INTENSIDADES, PRESETS_DESCANSO } from '../data.js';
+import {
+  get,
+  commit,
+  treinoAtual,
+  novoExercicio,
+  novaSerie,
+  resumoSeries,
+  TIPOS,
+  INTENSIDADES,
+  PRESETS_DESCANSO,
+  REDUCAO_DROP,
+} from '../data.js';
 import { esc, mss, uid, limitar } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { registrar, ui, confirmar, toast, ir } from '../ui.js';
-
-/* ---------- Entrada rápida: "3x10-12 + drop" ---------- */
-
-export function parseRapida(txt) {
-  const m = String(txt)
-    .trim()
-    .toLowerCase()
-    .match(/^(\d+)\s*[x×]\s*(\d+)(?:\s*[-–a]\s*(\d+))?\s*(?:\+\s*(\d+)?\s*(drop|cluster)(?:\s*set)?s?)?$/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  const min = Number(m[2]);
-  const max = m[3] ? Number(m[3]) : min;
-  const qtd = m[5] ? Number(m[4] ?? 1) : 0;
-  if (n < 1 || n > 10 || min < 1 || max < min || max > 100 || qtd > 6) return null;
-  const series = [
-    ...Array.from({ length: n }, () => novaSerie('normal', min, max)),
-    ...Array.from({ length: qtd }, () => novaSerie(m[5], min, max)),
-  ];
-  const faixa = min === max ? `${min}` : `${min}-${max}`;
-  const nome = m[5] === 'drop' ? 'drop set' : 'cluster';
-  const texto = `${n} série${n > 1 ? 's' : ''} normai${n > 1 ? 's' : ''} (${faixa} reps)${qtd ? ` + ${qtd} série${qtd > 1 ? 's' : ''} de ${nome} no final` : ''}`;
-  return { series, texto };
-}
+import { parseRapida } from '../rapida.js';
+import { urlBuscaYoutube } from '../video.js';
+import { MUSCULOS, sugerirMusculo, NOME_MUSCULO } from '../musculos.js';
 
 /* ---------- Tela ---------- */
 
@@ -43,19 +34,25 @@ function editorExercicio(ex, idx, total) {
   const s0 = ex.series[0] ?? novaSerie();
   const linhas = ex.series
     .map((s, i) => {
-      const tecs = ['normal', 'drop', 'cluster']
-        .map((k) => `<button class="${s.tipo === k ? 'on' : ''}" data-a="ed-tec" data-id="${ex.id}" data-i="${i}" data-tipo="${k}">${TIPOS[k]}</button>`)
+      const tecs = Object.keys(TIPOS)
+        .map(
+          (k) =>
+            `<button class="${s.tipo === k ? 'on' : ''}" data-a="ed-tec" data-id="${ex.id}" data-i="${i}" data-tipo="${k}">${TIPOS[k]}</button>`,
+        )
         .join('');
-      const params =
-        s.tipo === 'drop'
-          ? `<div class="params">${stepEd('Degraus', 'degraus', s.degraus, ex.id, i)}</div>`
-          : s.tipo === 'cluster'
-            ? `<div class="params">${stepEd('Blocos', 'blocos', s.blocos, ex.id, i)}${stepEd('Pausa', 'pausa', s.pausa, ex.id, i, 's')}</div>`
-            : '';
+      const params = {
+        drop: () =>
+          `${stepEd('Degraus', 'degraus', s.degraus, ex.id, i)}${stepEd('Redução', 'reducao', Math.round((s.reducao ?? REDUCAO_DROP) * 100), ex.id, i, '%')}`,
+        cluster: () =>
+          `${stepEd('Blocos', 'blocos', s.blocos, ex.id, i)}${stepEd('Pausa', 'pausa', s.pausa, ex.id, i, 's')}`,
+        restpause: () =>
+          `${stepEd('Blocos', 'blocos', s.blocos, ex.id, i)}${stepEd('Pausa', 'pausa', s.pausa, ex.id, i, 's')}`,
+        tempo: () => stepEd('Tempo', 'segundos', s.segundos ?? 45, ex.id, i, 's'),
+      }[s.tipo];
       return `<div class="serie-ed">
         <span class="num-b" style="width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--inset);font-family:var(--f-display);font-weight:700">${i + 1}</span>
         <div class="tecs">${tecs}</div>
-        ${params}
+        ${params ? `<div class="params">${params()}</div>` : ''}
       </div>`;
     })
     .join('');
@@ -63,12 +60,19 @@ function editorExercicio(ex, idx, total) {
   return `<div class="corpo">
     <label class="lbl caps" for="ed-nome-${ex.id}">Nome do exercício</label>
     <input id="ed-nome-${ex.id}" class="field" data-in="ed-text" data-k="nome" data-id="${ex.id}" value="${esc(ex.nome)}" autocomplete="off">
-    <label class="lbl caps" for="ed-grupo-${ex.id}">Grupo muscular (opcional)</label>
+    <label class="lbl caps" for="ed-grupo-${ex.id}">Descrição do músculo (texto livre)</label>
     <input id="ed-grupo-${ex.id}" class="field" data-in="ed-text" data-k="grupo" data-id="${ex.id}" value="${esc(ex.grupo)}" placeholder="Ex.: Peitoral maior · Isolador" autocomplete="off">
+
+    <span class="lbl caps lime">Grupo muscular (conta no volume)</span>
+    <div class="chips-wrap" role="group" aria-label="Grupo muscular">${MUSCULOS.map(([k, n]) => `<button class="chip ${ex.musculo === k ? 'on' : ''}" aria-pressed="${ex.musculo === k}" data-a="ed-musculo" data-id="${ex.id}" data-v="${k}">${n}</button>`).join('')}</div>
+    ${sugestaoMusculo(ex)}
 
     <span class="lbl caps">Intensidade prescrita</span>
     <div class="seg">${Object.entries(INTENSIDADES)
-      .map(([k, nome]) => `<button class="${ex.intensidade === k ? `on ${k}` : ''}" data-a="ed-int" data-id="${ex.id}" data-v="${k}">${nome}</button>`)
+      .map(
+        ([k, nome]) =>
+          `<button class="${ex.intensidade === k ? `on ${k}` : ''}" data-a="ed-int" data-id="${ex.id}" data-v="${k}">${nome}</button>`,
+      )
       .join('')}</div>
 
     <div class="row between"><span class="lbl caps">Pausa / descanso</span><b class="lime num">${mss(ex.descanso)} min</b></div>
@@ -80,6 +84,8 @@ function editorExercicio(ex, idx, total) {
 
     <label class="lbl caps" for="ed-video-${ex.id}">Vídeo demonstrativo (link)</label>
     <input id="ed-video-${ex.id}" class="field" inputmode="url" data-in="ed-text" data-k="video" data-id="${ex.id}" value="${esc(ex.video)}" placeholder="https://youtube.com/…" autocomplete="off">
+    <a class="btn sec sm mt8" href="${esc(urlBuscaYoutube(ex.nome))}" target="_blank" rel="noopener">${icon('external-link', 16)} Buscar no YouTube</a>
+    <p class="sm mute" style="margin:6px 0 0">Escolha o vídeo, copie o link e cole acima.</p>
 
     <label class="lbl caps" for="ed-nota-${ex.id}">Orientação do personal</label>
     <textarea id="ed-nota-${ex.id}" class="field" data-in="ed-text" data-k="nota" data-id="${ex.id}" placeholder="Ex.: pausa de 1s na transição">${esc(ex.nota)}</textarea>
@@ -102,12 +108,22 @@ function editorExercicio(ex, idx, total) {
   </div>`;
 }
 
+function sugestaoMusculo(ex) {
+  const sug = sugerirMusculo(ex.nome);
+  if (!sug || sug === ex.musculo) return '';
+  return `<div class="sug-musc">${icon('sparkles', 20)}<div class="grow"><b>Sugerido pelo nome: ${NOME_MUSCULO[sug]}</b><div class="sm mute">Confira antes de aplicar.</div></div><button class="btn sm" data-a="ed-musculo" data-id="${ex.id}" data-v="${sug}">Aplicar</button></div>`;
+}
+
 export function editar() {
   const d = get();
   const treino = treinoAtual();
   const voltar = `<a class="icon-btn" href="#/" aria-label="Voltar">${icon('arrow-left', 24)}</a>`;
   if (!treino) {
-    return { top: `${voltar}<h1 class="sub">Editar treino</h1>`, html: `<div class="vazio"><p>Nenhum treino.</p><button class="btn" data-a="novo-treino">Criar treino</button></div>`, nav: false };
+    return {
+      top: `${voltar}<h1 class="sub">Editar treino</h1>`,
+      html: `<div class="vazio"><p>Nenhum treino.</p><button class="btn" data-a="novo-treino">Criar treino</button></div>`,
+      nav: false,
+    };
   }
   const total = treino.exercicios.length;
   const aberto = treino.exercicios.find((e) => e.id === ui.editEx);
@@ -146,14 +162,18 @@ export function editar() {
         <button class="btn sec sm" style="min-height:48px" data-a="ed-aplicar-rapida">Aplicar</button>
       </div>
       <div class="previa ${ui.rapida && !previa ? 'err' : ''}" data-previa>${previaTxt(ui.rapida, previa, aberto)}</div>
-      <p class="sm mute" style="margin:8px 0 0">Aplica no exercício aberto abaixo. Exemplos: <b>4x8-10</b> · <b>3x10-12 + drop</b> · <b>3x8 + 2 cluster</b></p>
+      <p class="sm mute" style="margin:8px 0 0">Aplica no exercício aberto abaixo. Exemplos: <b>4x8-10</b> · <b>3x10-12 + drop</b> · <b>3x8 + 2 cluster</b> · <b>3x10 + rest-pause</b> · <b>3x45s</b></p>
     </section>
     <div class="row between" style="margin:20px 0 10px"><h2 class="h-lg" style="font-size:22px">Sequência prescrita</h2><span class="badge neutro">${total} ${total === 1 ? 'item' : 'itens'}</span></div>
     ${lista || `<div class="vazio">${icon('dumbbell', 36)}<p>Nenhum exercício ainda.</p></div>`}
     <button class="btn sec" data-a="ed-novo-ex">${icon('plus', 20)} Adicionar novo exercício</button>
     <button class="btn sec danger mt24" data-a="ed-del-treino">${icon('trash-2', 18)} Excluir este treino</button>
   `;
-  return { top: `${voltar}<h1 class="sub">Editar treino</h1><a class="btn sm" href="#/">Concluir</a>`, html, nav: false };
+  return {
+    top: `${voltar}<h1 class="sub">Editar treino</h1><a class="btn sm" href="#/">Concluir</a>`,
+    html,
+    nav: false,
+  };
 }
 
 function previaTxt(txt, previa, aberto) {
@@ -210,6 +230,7 @@ registrar(
       ui.editEx = copia.id;
       commit(() => {});
     },
+    'ed-musculo': (el) => commit(() => (exDe(el.dataset.id).musculo = el.dataset.v)),
     'ed-int': (el) => commit(() => (exDe(el.dataset.id).intensidade = el.dataset.v)),
     'ed-desc': (el) => commit(() => (exDe(el.dataset.id).descanso = Number(el.dataset.v))),
     'ed-tec': (el) => {
@@ -223,7 +244,8 @@ registrar(
       commit(() => {
         switch (el.dataset.k) {
           case 'nSeries': {
-            if (dir > 0 && ex.series.length < 10) ex.series.push({ ...(ex.series.at(-1) ?? novaSerie()), tipo: 'normal' });
+            if (dir > 0 && ex.series.length < 10)
+              ex.series.push({ ...(ex.series.at(-1) ?? novaSerie()), tipo: 'normal' });
             else if (dir < 0 && ex.series.length > 1) ex.series.pop();
             break;
           }
@@ -244,6 +266,13 @@ registrar(
             break;
           case 'blocos':
             ex.series[i].blocos = limitar(ex.series[i].blocos + dir, 2, 10);
+            break;
+          case 'reducao':
+            ex.series[i].reducao =
+              limitar(Math.round((ex.series[i].reducao ?? REDUCAO_DROP) * 100) + dir * 5, 10, 60) / 100;
+            break;
+          case 'segundos':
+            ex.series[i].segundos = limitar((ex.series[i].segundos ?? 45) + dir * 5, 5, 600);
             break;
           case 'pausa':
             ex.series[i].pausa = limitar(ex.series[i].pausa + dir * 5, 5, 60);

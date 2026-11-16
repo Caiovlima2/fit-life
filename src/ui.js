@@ -7,9 +7,14 @@ export const ui = {
   rapida: '', // texto da "entrada rápida"
   progEx: null,
   periodo: '3m',
+  progAba: 'evolucao', // evolucao | recordes | volume
+  recGrupo: 'todos',
+  volSemana: 0, // 0 = semana atual, -1 = anterior...
+  volGrupo: null, // grupo aberto no detalhe do volume
   mes: null, // { ano, mes }
   dia: null, // chave do dia selecionado no histórico
   rolarAtiva: false,
+  rpe: null, // { i, v }: série que está recebendo a nota de esforço
   instalar: null, // evento beforeinstallprompt
 };
 
